@@ -1,0 +1,29 @@
+[tool.poetry]
+name = "meetup-messager"
+version = "0.1.0"
+description = ""
+authors = ["Jonny1987 <jrshannie@yahoo.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.10"
+selenium = "^4.16.0"
+python-dotenv = "^1.0.0"
+requests = "^2.31.0"
+
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.1.13"
+black = {extras = ["d"], version = "^23.12.1"}
+
+
+[tool.poetry.group.test.dependencies]
+pytest = "^7.4.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.pytest.ini_options]
+log_cli=true
+log_cli_level="INFO"
