@@ -7,7 +7,7 @@ import os
 from random import random
 
 import requests
-from selenium import webdriver
+from selenium.webdriver import Chrome, ChromeOptions
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
@@ -106,7 +106,9 @@ class AutoMessager:
         Login and message users
         """
         logging.info("starting...")
-        self.browser = webdriver.Chrome()
+        options = ChromeOptions()
+        options.add_argument("--headless=new")
+        self.browser = Chrome(options=options)
         self._login(self.username, self.password)
         self.my_group_user_ids = self._get_user_ids_of_group(self.my_group_url_name)
         self._message_all_users(self.groups_list, self.message_template)
