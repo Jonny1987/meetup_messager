@@ -33,7 +33,6 @@ GROUP_USERS_TEMPLATE_URL = "https://www.meetup.com/mu_api/urlname/members?querie
 GROUP_URL = "https://www.meetup.com/{group_url_name}/"
 LOGIN_URL = "https://secure.meetup.com/login/"
 LOGIN_SUCCESS_URL = "https://www.meetup.com/home/?suggested=true&source=EVENTS"
-MESSAGE_TEMPLATE = os.environ["MESSAGE_TEMPLATE"].replace("\n", "").replace("\\n", "\n")
 
 
 class NoMoreUsersException(Exception):
@@ -274,11 +273,16 @@ class AutoMessager:
 
 
 if __name__ == "__main__":
+    GROUPS_LIST = eval(os.environ["GROUPS_LIST"])
+    MESSAGE_TEMPLATE = (
+        os.environ["MESSAGE_TEMPLATE"].replace("\n", "").replace("\\n", "\n")
+    )
+
     AutoMessager(
         os.environ["USERNAME"],
         os.environ["PASSWORD"],
         os.environ["MY_GROUP_URL_NAME"],
-        os.environ["GROUPS_LIST"],
+        GROUPS_LIST,
         MESSAGE_TEMPLATE,
         SEEN_USERS_FILEPATH,
         LAST_PAGES_FILEPATH,
