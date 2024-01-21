@@ -240,10 +240,10 @@ class AutoMessager:
         MESSAGE_CYCLE_DURATION = 60 / MESSAGE_LIMIT_PER_MINUTE + ERROR_MARGIN
         for user in users:
             logging.info("messaging user {}".format(user.id))
-            message_user(user, group.name, message_template)
+            message_user(self.browser, user, group.name, message_template)
+            self.seen_user_ids.add(user.id)
             sleep(MESSAGE_CYCLE_DURATION)
             self._human_like_delay()
-            self.seen_user_ids.add(user.id)
 
     def _increase_last_page(self, group):
         """
