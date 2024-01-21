@@ -1,10 +1,10 @@
 # TODO: Make browser headless and check if timings can be reduced by timing them
-# TODO: space out messages and randomise exact time
 from dataclasses import dataclass
 import pickle
 import logging
 from time import sleep
 import os
+from random import random
 
 import requests
 from selenium import webdriver
@@ -14,8 +14,7 @@ from selenium.webdriver.common.by import By
 from dotenv import load_dotenv
 
 from config import (
-    MESSAGE_LIMIT,
-    MESSAGES_PAUSE_DURATION,
+    MESSAGE_LIMIT_PER_MINUTE,
     MESSAGES_PER_PAGE,
     USERS_API_PAUSE_DURATION,
 )
@@ -141,6 +140,7 @@ class AutoMessager:
             if len(users) < MESSAGES_PER_PAGE:
                 break
             sleep(USERS_API_PAUSE_DURATION)
+            page += 1
         return group_user_ids
 
     def _message_all_users(self, groups_list, message_template):
@@ -219,6 +219,12 @@ class AutoMessager:
         ]
         return users
 
+    def _human_like_delay(self):
+        """
+        Delays for a random amount of time between 1 and 2 seconds.
+        """
+        sleep(random() + 1)
+
     def _message_users(self, users, group, message_template):
         """
         Messages all users in the given list, pausing after MESSAGE_LIMIT for
@@ -227,21 +233,13 @@ class AutoMessager:
         Saves last_seen_users and last_pages to file on error or when finished.
         """
         logging.info("messaging users...")
-        message_count = 0
+        ERROR_MARGIN = 1
+        MESSAGE_CYCLE_DURATION = 60 / MESSAGE_LIMIT_PER_MINUTE + ERROR_MARGIN
         for user in users:
-            if message_count == MESSAGE_LIMIT:
-                logging.info(
-                    "Parsing for {} minutes before continuing".format(
-                        MESSAGES_PAUSE_DURATION / 60
-                    )
-                )
-                sleep(MESSAGES_PAUSE_DURATION)
-                logging.info("Pause finished, resuming messaging")
-                message_count = 0
-
             logging.info("messaging user {}".format(user.id))
             message_user(user, group.name, message_template)
-            message_count += 1
+            sleep(MESSAGE_CYCLE_DURATION)
+            self._human_like_delay()
             self.seen_user_ids.add(user.id)
 
     def _increase_last_page(self, group):

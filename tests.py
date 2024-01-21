@@ -5,7 +5,7 @@ from selenium import webdriver
 from dotenv import load_dotenv
 from unittest.mock import patch
 
-from messager import AutoMessager, User, Group, MESSAGE_LIMIT
+from messager import AutoMessager, User, Group
 from message_user import message_user
 
 load_dotenv()
@@ -113,11 +113,6 @@ def test_message_users(
         MOCK_USERS
     ), "Not all users were messaged"
 
-    # Check if sleep was called after MESSAGE_LIMIT messages
-    assert (
-        mock_sleep.call_count == len(MOCK_USERS) // MESSAGE_LIMIT
-    ), "Pause not correctly implemented"
-
     # Check if _save_seen_user_ids and _save_last_pages were called
     mock_save_seen_user_ids.assert_called_once()
     mock_save_last_pages.assert_called_once()
@@ -137,18 +132,30 @@ def test_message_users(
     ), "message_user was not called with the correct arguments"
 
 
+@pytest.fixture()
+def clearup_files():
+    yield
+    try:
+        os.remove("seen_users_test.pkl")
+        os.remove("last_pages_test.pkl")
+    except FileNotFoundError:
+        pass
+
+
 @patch("messager.message_user")
-@patch("messager.MESSAGES_PAUSE_DURATION", 1)
-def test_auto_messager(mock_message_user):
+@patch("messager.MESSAGE_LIMIT_PER_MINUTE", 1000)
+def test_auto_messager(mock_message_user, clearup_files):
     messager = AutoMessager(
         os.environ["USERNAME"],
         os.environ["PASSWORD"],
         os.environ["TEST_MY_GROUP_URL_NAME"],
-        ["bangkok-coworking-friends-meetup-group"],
+        [os.environ["TEST_MY_GROUP_URL_NAME"]],
         MESSAGE_TEMPLATE,
         "seen_users_test.pkl",
         "last_pages_test.pkl",
     )
+    messager._human_like_delay = lambda: 0
+    messager._filter_users = lambda users: users
     messager.start()
 
     assert mock_message_user.call_count > 30
@@ -156,9 +163,6 @@ def test_auto_messager(mock_message_user):
     users = [call_obj.args[0] for call_obj in mock_message_user.call_args_list]
     assert len(set(users)) == len(users)
     assert all([isinstance(user, User) for user in users])
-
-    os.remove("seen_users_test.pkl")
-    os.remove("last_pages_test.pkl")
 
 
 # # This test is commented out because it actually sends a message to a user which needs
