@@ -202,7 +202,9 @@ class AutoMessager:
         res = requests.get(group_users_url)
         data = res.json()
         user_data = data["responses"][0]["value"]["value"]
-        users = [User(user["id"], user["name"]) for user in user_data]
+        users = [
+            User(user["id"], user["name"]) for user in user_data if user["role"] == ""
+        ]
         logging.info("got {} users".format(len(users)))
         if filter:
             users = self._filter_users(users)
