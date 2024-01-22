@@ -1,17 +1,13 @@
-import os
-import sys
 import pickle
 from argparse import ArgumentParser
 
-from dotenv import load_dotenv
-
-load_dotenv()
+from private_config import MY_GROUP_URL_NAME
 
 
 def add_user_to_seen(user_id):
     with open("seen_users.pickle", "rb") as seen_users_file:
         seen_users = pickle.load(seen_users_file)
-    seen_users[os.environ["MY_GROUP_URL_NAME"]].add(user_id)
+    seen_users[MY_GROUP_URL_NAME].add(user_id)
 
     with open("seen_users.pickle", "wb") as seen_users_file:
         pickle.dump(seen_users, seen_users_file)

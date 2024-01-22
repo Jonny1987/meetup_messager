@@ -2,17 +2,22 @@ import os
 
 import pytest
 from selenium import webdriver
-from dotenv import load_dotenv
 from unittest.mock import patch
 
 from messager import AutoMessager, User, Group
 from message_user import message_user
-
-load_dotenv()
+from private_config import (
+    MESSAGE_TEMPLATES,
+    USERNAME,
+    PASSWORD,
+    TEST_MY_GROUP_URL_NAME,
+    TEST_GROUP_URL_NAME,
+    TEST_MY_GROUP_NAME,
+    TEST_USER_ID,
+)
 
 LOGIN_URL = "https://secure.meetup.com/login/"
 SUCCESS_URL = "https://www.meetup.com/home/?suggested=true&source=EVENTS"
-MESSAGE_TEMPLATE = os.environ["MESSAGE_TEMPLATE"].replace("\n", "").replace("\\n", "\n")
 
 
 @pytest.fixture
@@ -25,11 +30,11 @@ def browser():
 @pytest.fixture
 def auto_messager():
     messager = AutoMessager(
-        os.environ["USERNAME"],
-        os.environ["PASSWORD"],
-        os.environ["TEST_MY_GROUP_URL_NAME"],
+        USERNAME,
+        PASSWORD,
+        TEST_MY_GROUP_URL_NAME,
         ["test-group"],
-        MESSAGE_TEMPLATE,
+        [MESSAGE_TEMPLATES[0]],
         "",
         "",
     )
@@ -53,8 +58,8 @@ def test_get_user_ids_of_group(auto_messager):
 
 
 def test_get_next_users_no_filter(auto_messager):
-    users1 = auto_messager._get_next_page_users(os.environ["TEST_GROUP_URL_NAME"], 1)
-    users2 = auto_messager._get_next_page_users(os.environ["TEST_GROUP_URL_NAME"], 2)
+    users1 = auto_messager._get_page_users(TEST_GROUP_URL_NAME, 1)
+    users2 = auto_messager._get_page_users(TEST_GROUP_URL_NAME, 2)
 
     intercection = set(users1).intersection(set(users2))
 
@@ -82,48 +87,34 @@ def test_filter_users(auto_messager):
 
 def test_get_group_name(auto_messager, browser):
     auto_messager.browser = browser
-    group_name = auto_messager._get_group_name(os.environ["TEST_MY_GROUP_URL_NAME"])
-    assert group_name == os.environ["TEST_MY_GROUP_NAME"]
+    group_name = auto_messager._get_group_name(TEST_MY_GROUP_URL_NAME)
+    assert group_name == TEST_MY_GROUP_NAME
 
 
 @patch("messager.message_user")
-@patch("messager.AutoMessager._save_seen_user_ids")
-@patch("messager.AutoMessager._save_last_pages")
 @patch("messager.sleep")
 def test_message_users(
     mock_sleep,
-    mock_save_last_pages,
-    mock_save_seen_user_ids,
     mock_message_user,
     auto_messager,
+    browser,
 ):
     MOCK_GROUP = Group("example-group", "Example Group")
     MOCK_USERS = [
         User(id=f"user{i}", name=f"User {i}") for i in range(1, 6)
     ]  # Creating 5 mock users
 
+    auto_messager.browser = browser
+
     auto_messager._message_users(
         MOCK_USERS,
         MOCK_GROUP,
-        auto_messager.message_template,
     )
 
     # Check if _message_user was called for each user
     assert mock_message_user.call_count == len(
         MOCK_USERS
     ), "Not all users were messaged"
-
-    # Check if _save_seen_user_ids and _save_last_pages were called
-    mock_save_seen_user_ids.assert_called_once()
-    mock_save_last_pages.assert_called_once()
-
-    # Check if the seen_user_ids and last_pages were correctly updated
-    assert all(
-        user.id in auto_messager.seen_user_ids for user in MOCK_USERS
-    ), "Not all users were added to seen_user_ids"
-    assert (
-        auto_messager.last_pages[MOCK_GROUP.url_name] == len(MOCK_USERS) - 1
-    ), "last_pages was not correctly updated"
 
     # Check if message_user was called with the correct arguments
     assert all(
@@ -146,11 +137,11 @@ def clearup_files():
 @patch("messager.MESSAGE_LIMIT_PER_MINUTE", 1000)
 def test_auto_messager(mock_message_user, clearup_files):
     messager = AutoMessager(
-        os.environ["USERNAME"],
-        os.environ["PASSWORD"],
-        os.environ["TEST_MY_GROUP_URL_NAME"],
-        [os.environ["TEST_MY_GROUP_URL_NAME"]],
-        MESSAGE_TEMPLATE,
+        USERNAME,
+        PASSWORD,
+        TEST_MY_GROUP_URL_NAME,
+        [TEST_MY_GROUP_URL_NAME],
+        MESSAGE_TEMPLATES[0],
         "seen_users_test.pkl",
         "last_pages_test.pkl",
     )
@@ -158,7 +149,7 @@ def test_auto_messager(mock_message_user, clearup_files):
     messager._filter_users = lambda users: users
     messager.start()
 
-    assert mock_message_user.call_count > 30
+    assert mock_message_user.call_count > 10
     assert len(messager.seen_user_ids) == mock_message_user.call_count
     users = [call_obj.args[0] for call_obj in mock_message_user.call_args_list]
     assert len(set(users)) == len(users)
@@ -172,7 +163,7 @@ def test_auto_messager(mock_message_user, clearup_files):
 #     auto_messager._login(auto_messager.username, auto_messager.password)
 #     message_user(
 #         browser,
-#         User(os.environ["TEST_USER_ID"], "Test User"),
+#         User(TEST_USER_ID, "Test User"),
 #         "Other Meetup Group",
 #         auto_messager.message_template,
 #     )

@@ -3,7 +3,6 @@ from dataclasses import dataclass
 import pickle
 import logging
 from time import sleep
-import os
 from random import random
 
 import requests
@@ -11,19 +10,15 @@ from selenium.webdriver import Chrome, ChromeOptions
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-from dotenv import load_dotenv
 
-from config import (
-    MESSAGE_LIMIT_PER_MINUTE,
-    MESSAGES_PER_PAGE,
-    USERS_API_PAUSE_DURATION,
+from private_config import (
+    GROUPS_LIST,
+    MESSAGE_TEMPLATES,
+    USERNAME,
+    PASSWORD,
+    MY_GROUP_URL_NAME,
 )
 from message_user import message_user
-
-print("imports done")
-
-load_dotenv()
-
 
 logging.basicConfig(level=logging.INFO)
 
@@ -33,6 +28,10 @@ GROUP_USERS_TEMPLATE_URL = "https://www.meetup.com/mu_api/urlname/members?querie
 GROUP_URL = "https://www.meetup.com/{group_url_name}/"
 LOGIN_URL = "https://secure.meetup.com/login/"
 LOGIN_SUCCESS_URL = "https://www.meetup.com/home/?suggested=true&source=EVENTS"
+
+MESSAGE_LIMIT_PER_MINUTE = 1
+USERS_API_PAUSE_DURATION = 0.1
+MESSAGES_PER_PAGE = 30
 
 
 class NoMoreUsersException(Exception):
@@ -58,7 +57,7 @@ class AutoMessager:
         password,
         my_group_url_name,
         groups_list,
-        message_template,
+        message_templates,
         seen_users_filepath,
         last_pages_filepath,
     ):
@@ -67,11 +66,12 @@ class AutoMessager:
         self.my_group_url_name = my_group_url_name
         self.my_group_user_ids = set()
         self.groups_list = groups_list
-        self.message_template = message_template
+        self.message_templates = message_templates
         self.seen_users_filepath = seen_users_filepath
         self.last_pages_filepath = last_pages_filepath
         self.last_pages = self._get_last_pages(last_pages_filepath)
         self.seen_user_ids = self._get_seen_user_ids(seen_users_filepath)
+        self.message_template_gen = self._get_next_message_template()
 
     def _get_seen_user_ids(self, seen_users_filepath):
         """
@@ -110,7 +110,7 @@ class AutoMessager:
         self.browser = Chrome(options=options)
         self._login(self.username, self.password)
         self.my_group_user_ids = self._get_user_ids_of_group(self.my_group_url_name)
-        self._message_all_users(self.groups_list, self.message_template)
+        self._message_all_users(self.groups_list)
 
     def _login(self, username, password):
         """
@@ -144,19 +144,19 @@ class AutoMessager:
             page += 1
         return group_user_ids
 
-    def _message_all_users(self, groups_list, message_template):
+    def _message_all_users(self, groups_list):
         """
         Messages users in all groups.
         """
         logging.info("messaging all users...")
         try:
             for group_url_name in groups_list:
-                self._message_group_users(group_url_name, message_template)
+                self._message_group_users(group_url_name)
         finally:
             self._save_seen_user_ids(self.seen_user_ids)
             self._save_last_pages(self.last_pages)
 
-    def _message_group_users(self, group_url_name, message_template):
+    def _message_group_users(self, group_url_name):
         """
         Messages all users in a particular group.
         """
@@ -165,7 +165,7 @@ class AutoMessager:
         group = Group(group_url_name, group_name)
         while True:
             try:
-                self._message_next_page_users(group, message_template)
+                self._message_next_page_users(group)
             except NoMoreUsersException:
                 break
 
@@ -177,7 +177,7 @@ class AutoMessager:
         ).text
         return group_name
 
-    def _message_next_page_users(self, group, message_template):
+    def _message_next_page_users(self, group):
         """
         Messages the next page of users in a particular group.
         """
@@ -185,7 +185,7 @@ class AutoMessager:
         users = self._get_page_users(group.url_name, page)
         if not users:
             raise NoMoreUsersException()
-        self._message_users(users, group, message_template)
+        self._message_users(users, group)
         self._increase_last_page(group)
 
     def _get_page_users(self, group_url_name, page, filter=True):
@@ -228,7 +228,15 @@ class AutoMessager:
         """
         sleep(random() + 1)
 
-    def _message_users(self, users, group, message_template):
+    def _get_next_message_template(self):
+        """
+        Generator which yields the next message template.
+        """
+        while True:
+            for message_template in self.message_templates:
+                yield message_template
+
+    def _message_users(self, users, group):
         """
         Messages all users in the given list, pausing after MESSAGE_LIMIT for
         PAUSE_DURATION so as not to bypass the rate limit.
@@ -240,7 +248,8 @@ class AutoMessager:
         MESSAGE_CYCLE_DURATION = 60 / MESSAGE_LIMIT_PER_MINUTE + ERROR_MARGIN
         for user in users:
             logging.info("messaging user {}".format(user.id))
-            message_user(self.browser, user, group.name, message_template)
+            message_template = next(self.message_template_gen)
+            message_user(user, group.name, message_template, self.browser)
             self.seen_user_ids.add(user.id)
             sleep(MESSAGE_CYCLE_DURATION)
             self._human_like_delay()
@@ -273,17 +282,12 @@ class AutoMessager:
 
 
 if __name__ == "__main__":
-    GROUPS_LIST = eval(os.environ["GROUPS_LIST"])
-    MESSAGE_TEMPLATE = (
-        os.environ["MESSAGE_TEMPLATE"].replace("\n", "").replace("\\n", "\n")
-    )
-
     AutoMessager(
-        os.environ["USERNAME"],
-        os.environ["PASSWORD"],
-        os.environ["MY_GROUP_URL_NAME"],
+        USERNAME,
+        PASSWORD,
+        MY_GROUP_URL_NAME,
         GROUPS_LIST,
-        MESSAGE_TEMPLATE,
+        MESSAGE_TEMPLATES,
         SEEN_USERS_FILEPATH,
         LAST_PAGES_FILEPATH,
     ).start()

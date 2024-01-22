@@ -1,5 +1,6 @@
 seen_users.pickle
 last_pages.pickle
+private_config.py
 .vscode/
 
 # Byte-compiled / optimized / DLL files
