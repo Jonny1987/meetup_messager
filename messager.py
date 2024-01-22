@@ -224,9 +224,9 @@ class AutoMessager:
 
     def _human_like_delay(self):
         """
-        Delays for a random amount of time between 1 and 2 seconds.
+        Delays for a random amount of time between 0 and 5 seconds.
         """
-        sleep(random() + 1)
+        sleep(random() * 5)
 
     def _get_next_message_template(self):
         """
