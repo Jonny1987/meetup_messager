@@ -48,7 +48,13 @@ def _send_message(browser, user, group_name, message_template):
     wait.until(EC.url_contains("convo_id="))
 
 
-def message_user(browser, user, group_name, message_template):
+def _close_tab(browser, original_window):
+    # close current tab since a new one was created for composing the message
+    browser.close()
+    browser.switch_to.window(original_window)
+
+
+def message_user(user, group_name, message_template, browser):
     """
     Messages a particular user using the message_template.
     """
@@ -57,3 +63,4 @@ def message_user(browser, user, group_name, message_template):
     original_window = browser.current_window_handle
     _open_compose_message_page(browser, original_window)
     _send_message(browser, user, group_name, message_template)
+    _close_tab(browser, original_window)

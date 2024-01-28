@@ -24,6 +24,7 @@ logging.basicConfig(level=logging.INFO)
 
 LAST_PAGES_FILEPATH = "last_pages.pickle"
 SEEN_USERS_FILEPATH = "seen_users.pickle"
+LAST_MESSAGE_TEMPLATE_INDEX_FILEPATH = "last_message_template_index.pickle"
 GROUP_USERS_TEMPLATE_URL = "https://www.meetup.com/mu_api/urlname/members?queries=(endpoint:groups/{group_url_name}/members,list:(dynamicRef:list_groupMembers_{group_url_name}_all,merge:(isReverse:!f)),meta:(method:get),params:(filter:all,page:{page}),ref:groupMembers_{group_url_name}_all)"
 GROUP_URL = "https://www.meetup.com/{group_url_name}/"
 LOGIN_URL = "https://secure.meetup.com/login/"
@@ -69,9 +70,28 @@ class AutoMessager:
         self.message_templates = message_templates
         self.seen_users_filepath = seen_users_filepath
         self.last_pages_filepath = last_pages_filepath
-        self.last_pages = self._get_last_pages(last_pages_filepath)
-        self.seen_user_ids = self._get_seen_user_ids(seen_users_filepath)
-        self.message_template_gen = self._get_next_message_template()
+        self._get_state()
+
+    def _get_state(self):
+        self.last_pages = self._get_last_pages(self.last_pages_filepath)
+        self.seen_user_ids = self._get_seen_user_ids(self.seen_users_filepath)
+        self.last_message_template_index = self._get_last_message_template_index()
+
+    def _get_last_message_template_index(self):
+        """
+        Gets the last message template index from the file given by seen_users_filepath.
+        """
+        try:
+            with open(
+                LAST_MESSAGE_TEMPLATE_INDEX_FILEPATH, "rb"
+            ) as last_message_template_index_file:
+                last_message_template_index = pickle.load(
+                    last_message_template_index_file
+                )
+
+            return last_message_template_index
+        except FileNotFoundError:
+            return 0
 
     def _get_seen_user_ids(self, seen_users_filepath):
         """
@@ -153,8 +173,7 @@ class AutoMessager:
             for group_url_name in groups_list:
                 self._message_group_users(group_url_name)
         finally:
-            self._save_seen_user_ids(self.seen_user_ids)
-            self._save_last_pages(self.last_pages)
+            self._save_state()
 
     def _message_group_users(self, group_url_name):
         """
@@ -230,11 +249,20 @@ class AutoMessager:
 
     def _get_next_message_template(self):
         """
-        Generator which yields the next message template.
+        Gets the next message template
         """
-        while True:
-            for message_template in self.message_templates:
-                yield message_template
+        # Dont actually increase last_message_template_index here, as this is done
+        # in _message_users to ensure that it is only updates straight after a message
+        # is sent
+        next_index = (self.last_message_template_index + 1) % len(
+            self.message_templates
+        )
+        return self.message_templates[next_index]
+
+    def _increase_last_message_template_index(self):
+        self.last_message_template_index = (self.last_message_template_index + 1) % len(
+            self.message_templates
+        )
 
     def _message_users(self, users, group):
         """
@@ -248,9 +276,10 @@ class AutoMessager:
         MESSAGE_CYCLE_DURATION = 60 / MESSAGE_LIMIT_PER_MINUTE + ERROR_MARGIN
         for user in users:
             logging.info("messaging user {}".format(user.id))
-            message_template = next(self.message_template_gen)
+            message_template = self._get_next_message_template()
             message_user(user, group.name, message_template, self.browser)
             self.seen_user_ids.add(user.id)
+            self._increase_last_message_template_index()
             sleep(MESSAGE_CYCLE_DURATION)
             self._human_like_delay()
 
@@ -260,6 +289,11 @@ class AutoMessager:
         """
         self.last_pages.setdefault(group.url_name, -1)
         self.last_pages[group.url_name] += 1
+
+    def _save_state(self):
+        self._save_seen_user_ids(self.seen_user_ids)
+        self._save_last_pages(self.last_pages)
+        self._save_last_message_template_index()
 
     def _save_last_pages(self, last_pages):
         logging.info("saving last pages")
@@ -279,6 +313,15 @@ class AutoMessager:
 
         with open(self.seen_users_filepath, "wb") as seen_users_file:
             pickle.dump(all_seen_user_ids, seen_users_file)
+
+    def _save_last_message_template_index(self):
+        logging.info("saving last message template index")
+        with open(
+            LAST_MESSAGE_TEMPLATE_INDEX_FILEPATH, "wb"
+        ) as last_message_template_index_file:
+            pickle.dump(
+                self.last_message_template_index, last_message_template_index_file
+            )
 
 
 if __name__ == "__main__":
