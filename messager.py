@@ -1,11 +1,9 @@
 # TODO: Make browser headless and check if timings can be reduced by timing them
-from dataclasses import dataclass
 import pickle
 import logging
 from time import sleep
 from random import random
 
-import requests
 from selenium.webdriver import Chrome, ChromeOptions
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -18,37 +16,24 @@ from private_config import (
     PASSWORD,
     MY_GROUP_URL_NAME,
 )
-from message_user import message_user
+from utils.message_user import message_user
+from models import Group
+from utils.seen_user_ids import get_seen_user_ids, save_seen_user_ids
 
 logging.basicConfig(level=logging.INFO)
 
 LAST_PAGES_FILEPATH = "last_pages.pickle"
 SEEN_USERS_FILEPATH = "seen_users.pickle"
 LAST_MESSAGE_TEMPLATE_INDEX_FILEPATH = "last_message_template_index.pickle"
-GROUP_USERS_TEMPLATE_URL = "https://www.meetup.com/mu_api/urlname/members?queries=(endpoint:groups/{group_url_name}/members,list:(dynamicRef:list_groupMembers_{group_url_name}_all,merge:(isReverse:!f)),meta:(method:get),params:(filter:all,page:{page}),ref:groupMembers_{group_url_name}_all)"
 GROUP_URL = "https://www.meetup.com/{group_url_name}/"
 LOGIN_URL = "https://secure.meetup.com/login/"
 LOGIN_SUCCESS_URL = "https://www.meetup.com/home/?suggested=true&source=EVENTS"
 
 MESSAGE_LIMIT_PER_MINUTE = 1
-USERS_API_PAUSE_DURATION = 0.1
-MESSAGES_PER_PAGE = 30
 
 
 class NoMoreUsersException(Exception):
     pass
-
-
-@dataclass(frozen=True)
-class User:
-    id: str
-    name: str
-
-
-@dataclass(frozen=True)
-class Group:
-    url_name: str
-    name: str
 
 
 class AutoMessager:
@@ -74,7 +59,10 @@ class AutoMessager:
 
     def _get_state(self):
         self.last_pages = self._get_last_pages(self.last_pages_filepath)
-        self.seen_user_ids = self._get_seen_user_ids(self.seen_users_filepath)
+        self.seen_user_ids = get_seen_user_ids(
+            self.seen_users_filepath,
+            self.my_group_url_name,
+        )
         self.last_message_template_index = self._get_last_message_template_index()
 
     def _get_last_message_template_index(self):
@@ -92,18 +80,6 @@ class AutoMessager:
             return last_message_template_index
         except FileNotFoundError:
             return 0
-
-    def _get_seen_user_ids(self, seen_users_filepath):
-        """
-        Gets the seen_user_ids set from the file given by seen_users_filepath.
-        """
-        try:
-            with open(seen_users_filepath, "rb") as seen_users_file:
-                all_seen_user_ids = pickle.load(seen_users_file)
-
-            return all_seen_user_ids[self.my_group_url_name]
-        except FileNotFoundError:
-            return set()
 
     def _get_last_pages(self, last_pages_filepath):
         """
@@ -129,7 +105,7 @@ class AutoMessager:
         options.add_argument("--headless=new")
         self.browser = Chrome(options=options)
         self._login(self.username, self.password)
-        self.my_group_user_ids = self._get_user_ids_of_group(self.my_group_url_name)
+        self.my_group_user_ids = self._get_user_ids(self.my_group_url_name)
         self._message_all_users(self.groups_list)
 
     def _login(self, username, password):
@@ -149,20 +125,6 @@ class AutoMessager:
         submit_button.click()
         WebDriverWait(self.browser, 10).until(EC.url_to_be(LOGIN_SUCCESS_URL))
         logging.info("successfully logged in")
-
-    def _get_user_ids_of_group(self, group_url_name):
-        logging.info("getting user ids of group {}".format(group_url_name))
-        group_user_ids = set()
-        page = 0
-        while True:
-            users = self._get_page_users(group_url_name, page, filter=False)
-            user_ids = {user.id for user in users}
-            group_user_ids.update(user_ids)
-            if len(users) < MESSAGES_PER_PAGE:
-                break
-            sleep(USERS_API_PAUSE_DURATION)
-            page += 1
-        return group_user_ids
 
     def _message_all_users(self, groups_list):
         """
@@ -206,40 +168,6 @@ class AutoMessager:
             raise NoMoreUsersException()
         self._message_users(users, group)
         self._increase_last_page(group)
-
-    def _get_page_users(self, group_url_name, page, filter=True):
-        """
-        Gets the next page of users for a particular group.
-        """
-        logging.info(
-            "getting page {} of users for group {}".format(page, group_url_name)
-        )
-        group_users_url = GROUP_USERS_TEMPLATE_URL.format(
-            group_url_name=group_url_name, page=page
-        )
-        res = requests.get(group_users_url)
-        data = res.json()
-        user_data = data["responses"][0]["value"]["value"]
-        users = [
-            User(user["id"], user["name"]) for user in user_data if user["role"] == ""
-        ]
-        logging.info("got {} users".format(len(users)))
-        if filter:
-            users = self._filter_users(users)
-            logging.info("filtered to {} users".format(len(users)))
-        return users
-
-    def _filter_users(self, users):
-        """
-        Filters out users that have already been seen or who are already in my group.
-        """
-        users = [
-            user
-            for user in users
-            if user.id not in self.seen_user_ids
-            and user.id not in self.my_group_user_ids
-        ]
-        return users
 
     def _human_like_delay(self):
         """
@@ -291,7 +219,11 @@ class AutoMessager:
         self.last_pages[group.url_name] += 1
 
     def _save_state(self):
-        self._save_seen_user_ids(self.seen_user_ids)
+        save_seen_user_ids(
+            self.seen_user_ids,
+            self.seen_users_filepath,
+            self.my_group_url_name,
+        )
         self._save_last_pages(self.last_pages)
         self._save_last_message_template_index()
 
@@ -299,20 +231,6 @@ class AutoMessager:
         logging.info("saving last pages")
         with open(self.last_pages_filepath, "wb") as last_pages_file:
             pickle.dump(last_pages, last_pages_file)
-
-    def _save_seen_user_ids(self, seen_user_ids):
-        logging.info("saving seen user ids")
-        all_seen_user_ids = {}
-        try:
-            with open(self.seen_users_filepath, "rb") as seen_users_file:
-                all_seen_user_ids = pickle.load(seen_users_file)
-        except FileNotFoundError:
-            pass
-
-        all_seen_user_ids[self.my_group_url_name] = seen_user_ids
-
-        with open(self.seen_users_filepath, "wb") as seen_users_file:
-            pickle.dump(all_seen_user_ids, seen_users_file)
 
     def _save_last_message_template_index(self):
         logging.info("saving last message template index")
