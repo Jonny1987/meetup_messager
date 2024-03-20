@@ -14,7 +14,7 @@ requests = "^2.31.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.1.13"
-black = {extras = ["d"], version = "^23.12.1"}
+black = {extras = ["d"], version = "^24.3.0"}
 
 
 [tool.poetry.group.test.dependencies]
